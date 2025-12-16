@@ -1,0 +1,6 @@
+# Core dependencies for PlanVerb NLG Project
+unified-planning==1.1.0
+pddl==0.4.0
+
+# For testing
+pytest==7.4.0
