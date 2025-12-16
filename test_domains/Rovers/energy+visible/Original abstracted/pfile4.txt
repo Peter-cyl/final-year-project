@@ -1,0 +1,61 @@
+(define (problem roverprob6232) (:domain Rover)
+(:objects
+	general - Lander
+
+	rover1 - Rover
+	rover1store - Store
+	waypoint1 waypoint2 waypoint3 landerpoint - Waypoint
+
+	)
+(:init
+	(visible waypoint2 waypoint1)
+	(visible waypoint1 waypoint2)
+	(visible waypoint2 waypoint3)
+	(visible waypoint3 waypoint2)
+	(visible waypoint3 waypoint1)
+	(visible waypoint1 waypoint3)
+	
+	(visible waypoint3 landerpoint)
+	
+	(at_rock_sample waypoint1)
+	(in_sun waypoint1)
+	(at_soil_sample waypoint2)
+	(in_sun waypoint2)
+	(at_soil_sample waypoint3)
+	(at_rock_sample waypoint3)
+	
+	(at_lander general landerpoint)
+	(channel_free general)
+	
+	(= (energy rover1) 0)
+	(= (recharge-rate rover1) 5)
+	(at rover1 waypoint1)
+	(available rover1)
+	(store_of rover1store rover1)
+	(empty rover1store)
+	(equipped_for_soil_analysis rover1)
+	(equipped_for_rock_analysis rover1)
+
+
+	(can_traverse rover1 waypoint2 waypoint1)
+	(can_traverse rover1 waypoint1 waypoint2)
+	(can_traverse rover1 waypoint2 waypoint3)
+	(can_traverse rover1 waypoint3 waypoint2)
+	(can_traverse rover1 waypoint1 waypoint3)
+	(can_traverse rover1 waypoint3 waypoint1)
+	
+	(notcharging rover1)
+	
+
+)
+
+(:goal (and
+(communicated_rock_data waypoint1)
+(communicated_soil_data waypoint2)
+(communicated_soil_data waypoint3)
+
+	)
+)
+
+(:metric minimize (total-time))
+)

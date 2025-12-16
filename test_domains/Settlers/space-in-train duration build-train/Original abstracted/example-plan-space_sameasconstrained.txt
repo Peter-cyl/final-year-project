@@ -1,0 +1,36 @@
+0.000: (find-resource location3)  [1.000]
+1.001: (mine-iron location3)  [1.000]
+2.002: (mine-iron location3)  [1.000]
+3.003: (mine-iron location3)  [1.000]
+4.004: (mine-iron location3)  [1.000]
+5.005: (mine-iron location3)  [1.000]
+6.006: (mine-iron location3)  [1.000]
+7.007: (mine-iron location3)  [1.000]
+8.009: (build-train location3 vehicle3)  [0.001]
+8.011: (find-resource location3)  [1.000]
+9.012: (find-resource location3)  [1.000]
+10.013: (build-rail location3 location0)  [5.000]
+15.014: (load-train vehicle3 location3 building_resource)  [0.010]
+15.025: (find-resource location3)  [1.000]
+16.026: (load-train vehicle3 location3 building_resource)  [0.010]
+16.037: (find-resource location3)  [1.000]
+17.038: (load-train vehicle3 location3 building_resource)  [0.010]
+17.049: (find-resource location3)  [1.000]
+18.050: (load-train vehicle3 location3 building_resource)  [0.010]
+18.061: (move-train vehicle3 location3 location0)  [1.000]
+19.062: (unload-train vehicle3 location0 building_resource)  [0.010]
+19.073: (unload-train vehicle3 location0 building_resource)  [0.010]
+19.084: (unload-train vehicle3 location0 building_resource)  [0.010]
+19.095: (unload-train vehicle3 location0 building_resource)  [0.010]
+19.106: (build-house location0)  [3.000]
+22.107: (build-house location0)  [3.000]
+
+ * All goal deadlines now no later than 25.106
+
+
+;; plan after abstracting (> (space-in ?v) 0) from precon of load-train, build-train time, using train
+;; if we didn't require that there is still space in the train to load a resource r in to the train in a place p AND to build the train took 0 seconds. 
+
+
+
+

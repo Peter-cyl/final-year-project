@@ -1,0 +1,34 @@
+0.000: (mine-iron location3)  [1.000]
+1.001: (mine-iron location3)  [1.000]
+2.002: (mine-iron location3)  [1.000]
+3.003: (mine-iron location3)  [1.000]
+4.004: (find-resource location3)  [1.000]
+5.005: (find-resource location3)  [1.000]
+6.006: (mine-iron location3)  [1.000]
+7.007: (mine-iron location3)  [1.000]
+8.008: (mine-iron location3)  [1.000]
+9.009: (build-train location3 vehicle3)  [0.001]
+9.011: (find-resource location3)  [1.000]
+10.012: (build-rail location3 location0)  [0.001]
+10.014: (load-train vehicle3 location3 building_resource)  [0.010]
+10.025: (find-resource location3)  [1.000]
+11.026: (load-train vehicle3 location3 building_resource)  [0.010]
+11.037: (move-train vehicle3 location3 location0)  [1.000]
+12.038: (unload-train vehicle3 location0 building_resource)  [0.010]
+12.049: (unload-train vehicle3 location0 building_resource)  [0.010]
+12.060: (find-resource location3)  [1.000]
+13.061: (move-train vehicle3 location0 location3)  [1.000]
+14.062: (load-train vehicle3 location3 building_resource)  [0.010]
+14.073: (find-resource location3)  [1.000]
+15.074: (load-train vehicle3 location3 building_resource)  [0.010]
+15.085: (move-train vehicle3 location3 location0)  [1.000]
+16.086: (unload-train vehicle3 location0 building_resource)  [0.010]
+16.097: (unload-train vehicle3 location0 building_resource)  [0.010]
+16.108: (build-house location0)  [3.000]
+19.109: (build-house location0)  [3.000]
+
+ * All goal deadlines now no later than 22.109
+ 
+
+;; plan after abstracting duration of build-rail, build-train, using train
+;; If to build the train in a place p took 0 seconds AND to build the rail between the places p1 and p2 took 0 seconds. 

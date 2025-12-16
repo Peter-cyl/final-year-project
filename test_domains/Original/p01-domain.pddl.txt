@@ -1,0 +1,200 @@
+(define (domain CrewPlanning)
+ (:requirements :durative-actions :typing :fluents :action-costs )  ;;:goal-utilities
+(:types MedicalState FilterState CrewMember PayloadAct Day RPCM - objects)
+
+(:predicates
+	;;(mcs_finished ?ps - MedicalState ?d - Day)
+
+	(changed ?fs - FilterState ?d - Day)
+
+	;; Predicates to order actions in CrewPlanner's DailyRoutine HTN schema
+	(done_meal  ?c - CrewMember ?d - Day)
+	(done_exercise  ?c - CrewMember ?d - Day)
+	(not_sleeping ?c - CrewMember)
+	(gone_to_sleep ?c - CrewMember ?d - Day)
+
+	
+	;; Predicates to order actions in RPCM's Perform HTN schema
+	;;(done_first_reconfigure_thermal_loop ?r - RPCM)
+	;;(done_remove_sleep_station ?r - RPCM)
+	;;(done_replace_rpcm ?r - RPCM)
+	;;(done_assemble_sleep_station ?r - RPCM)
+	;;(done_second_reconfigurate_thermal_loops ?r - RPCM)
+	;;(done_rpcm ?r - RPCM)
+
+	;; To indicate that a PayloadActivity is done
+	(payload_act_completed ?pa - PayloadAct)
+
+	;; Day concept to approximate the temporal constraints on actions/goals
+	(currentday ?d - Day)
+	(active ?c - CrewMember  ?d - day)
+	(next ?d1 ?d2 - Day)
+	
+	;; do not abstract this
+	(not-action-performing)
+)
+
+(:functions
+	;; specify the total available time of each crew member
+	(available_time ?c - CrewMember ?d - Day) - number
+	(crew_efficiency ?c - CrewMember ?d - Day) - number
+	;; shoud be within [0,1] but to ensure integer constraint
+	(achieve_time_discount ?d - Day) - number
+	(payloadact_length ?pa - PayloadAct) - number
+	(the-cost) - number)
+
+
+
+;;
+;; Daily routine by CrewPlanner (start the day with "post_sleep")
+;;
+;; Proper encoding needs to add "clip" actions to concatenate different days
+
+;; This make sure that only move to the second day when all the
+;; crew members finish sleeping
+(:durative-action move_to_next_day
+ :parameters (?d1 ?d2 - Day)
+ :duration (= ?duration 0.01)
+ :condition (and 
+                (at start (currentday ?d1))
+		(over all (next ?d1 ?d2))
+		;;(over all (forall (?c - CrewMember) (not (active ?c ?d1))))
+		(over all (forall (?c - CrewMember) (gone_to_sleep ?c ?d1)))
+		(at start (not-action-performing))
+		)
+ :effect (and 
+        (at start (not (not-action-performing)))
+        (at start (not (currentday ?d1)))
+	(at end (currentday ?d2))
+	(at end (not-action-performing))
+	)
+)
+
+
+;; combination of the two original actions: post-sleep + dpc
+(:durative-action wake_up
+ :parameters (?c - CrewMember ?d - Day)
+ :duration (= ?duration 195)
+ :condition (and  
+                (over all (currentday ?d))
+	        (at start (>= (available_time ?c ?d) 195))
+	        (at start (not-action-performing))
+	        )
+ :effect (and  
+           (at start (not (not-action-performing)))
+           (at start (not_sleeping ?c))
+	   (at start (increase (the-cost) 195))
+	   (at start (decrease (available_time ?c ?d) 195))
+	   (at end (not-action-performing))
+	 )
+)
+
+
+;; do not model "pre-meal" in this track
+(:durative-action have_meal
+ :parameters (?c - CrewMember ?d - Day)
+ :duration (= ?duration 60)
+ :condition (and  
+                (over all (currentday ?d))
+		(over all (not_sleeping ?c))
+	        (at start (>= (available_time ?c ?d) 60))
+	        (at start (not-action-performing))
+	        )
+ :effect (and  
+           (at start (not (not-action-performing)))
+           (at end (done_meal ?c ?d))
+	   (at start (increase (the-cost) 60))
+	   (at start (decrease (available_time ?c ?d) 60))
+	   (at end (not-action-performing))
+	   )
+)
+
+;; do not model "pre-exercise" in this track
+(:durative-action exercise
+ :parameters (?c - CrewMember ?d - Day)
+ :duration (= ?duration 60)
+ :condition (and  
+                (over all (currentday ?d))
+		(over all (not_sleeping ?c))
+	        (at start (>= (available_time ?c ?d) 60))
+	        (at start (not-action-performing))
+	        )
+ :effect (and  
+           (at start (not (not-action-performing)))
+           (at end (done_exercise ?c ?d))
+	   (at start (increase (the-cost) 60))
+	   (at start (decrease (available_time ?c ?d) 60))
+	   (at end (not-action-performing))
+	   )
+)
+
+
+;; combination of two original actions: pre-sleep + sleep
+(:durative-action sleep
+ :parameters (?c - CrewMember ?d - Day)
+ :duration (= ?duration 600)
+ :condition (and  
+               (over all (currentday ?d))
+		(at start (not_sleeping ?c))
+		(at start (not (gone_to_sleep ?c ?d)))
+		(at start (active ?c ?d))
+		(over all (done_exercise ?c ?d))
+		(over all (done_meal ?c ?d))
+	        (at start (>= (available_time ?c ?d) 600))
+	        (at start (not-action-performing))
+	        )
+ :effect (and  
+           (at start (not (not-action-performing)))
+           (at start (not (active ?c ?d)))
+	   (at start (not (not_sleeping ?c)))
+	   (at start (gone_to_sleep ?c ?d))
+	   (at start (increase (the-cost) 600))
+	   (at start (decrease (available_time ?c ?d) 600))
+	   (at end (not-action-performing))
+	   )
+)
+
+
+;; filter needs to be changed; those days are separated by 24-48 hours
+(:durative-action change_filter
+ :parameters (?fs - FilterState  ?c - CrewMember ?d - Day)
+ :duration (= ?duration (* 6 (crew_efficiency ?c ?d)))
+ :condition (and  
+                (over all (currentday ?d))
+		(over all (not_sleeping ?c))
+	         (at start (>= (available_time ?c ?d) 60))
+	         (at start (not-action-performing))
+	         )
+ :effect (and  
+            (at start (not (not-action-performing)))
+            (at end (changed ?fs ?d))
+	    (at start (increase (the-cost) (* 6 (crew_efficiency ?c ?d))))
+	    (at start (decrease (available_time ?c ?d) 60))
+	    (at end (not-action-performing))
+	    )
+)
+
+
+(:durative-action conduct_payload_activity
+ :parameters (?pa - PayloadAct ?c - CrewMember ?d - Day)
+ :duration (= ?duration (* (/ (payloadact_length ?pa) 10) (+ (crew_efficiency ?c ?d) (achieve_time_discount ?d))))
+ :condition (and 
+                (over all (currentday ?d))
+		(over all (not_sleeping ?c))
+		(at start (>= (available_time ?c ?d) (payloadact_length ?pa)))
+		(at start (not-action-performing))
+		)
+ :effect (and 
+             (at start (not (not-action-performing)))
+             (at end (payload_act_completed ?pa))
+	      (at start (increase (the-cost)
+                    (* (/ (payloadact_length ?pa) 10)
+		     (+ (crew_efficiency ?c ?d) (achieve_time_discount ?d)))))
+	      (at start (decrease (available_time ?c ?d) (payloadact_length ?pa)))
+	      (at end (not-action-performing))
+	 )
+)
+
+)
+
+;; EOF

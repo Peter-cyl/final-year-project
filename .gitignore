@@ -25,3 +25,7 @@ ENV/
 # Project specific
 *.log
 .cache/
+
+# Supervisor materials (not to be distributed)
+UnderGraduatePlanVerbProject/
+DomainsForUGProjects/

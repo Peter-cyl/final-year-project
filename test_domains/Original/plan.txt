@@ -1,0 +1,19 @@
+; Metric value 2363.02
+0.001: (wake_up c1 d1) [195.000] ; (1)
+195.002: (wake_up c2 d1) [195.000] ; (2)
+390.003: (change_filter spaceshipfilter c1 d1) [48.000] ; (9)
+438.004: (conduct_payload_activity pa1 c1 d1) [112.000] ; (11)
+550.005: (conduct_payload_activity pa2 c1 d1) [144.000] ; (12)
+694.006: (conduct_payload_activity pa3 c1 d1) [112.000] ; (13)
+806.007: (conduct_payload_activity pa4 c2 d1) [117.000] ; (20)
+923.008: (have_meal c1 d1) [60.000] ; (3)
+983.009: (exercise c1 d1) [60.000] ; (5)
+1043.010: (sleep c1 d1) [600.000] ; (7)
+1643.011: (have_meal c2 d1) [60.000] ; (4)
+1703.012: (exercise c2 d1) [60.000] ; (6)
+1763.013: (sleep c2 d1) [600.000] ; (8)
+2363.014: (move_to_next_day d1 d2) [0.010] ; (0)
+
+
+;; 915 = wakeup + sleep + exercise + eat
+;; filter 60
