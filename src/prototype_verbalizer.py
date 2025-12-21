@@ -104,38 +104,62 @@ class PrototypeVerbalizer:
     def _parse_param_string(self, params_str: str) -> List[Tuple[str, str]]:
         """
         Parse parameter string like "ttruck" or "ddriverttruck" into param list.
-        
-        Strategy: Match against known types from domain map.
+
+        Strategy: Match against known types from domain map, with targeted heuristics
+        to resolve concatenation artifacts at word boundaries (e.g., 'tt' in 'refrigeratedttruck').
+
+        The heuristic detects when a parameter letter is followed by a duplicate letter at the
+        start of a type name, and resolves this by treating it as a single occurrence.
+        This preserves valid English double-letter words while fixing concatenation artifacts.
+
+        Examples:
+            "ttruck" -> [("t", "truck")]  # 'tt' artifact resolved
+            "ddriverttruck" -> [("d", "driver"), ("t", "truck")]  # Both 'dd' and 'tt' resolved
+            "pprod" -> [("p", "prod")]  # 'pp' artifact resolved
         """
         parameters = []
         remaining = params_str
-        
+
         # Known types from domain
         known_types = list(self.domain_map.types.keys()) + ["object"]
         # Sort by length (longest first) to match correctly
         known_types.sort(key=len, reverse=True)
-        
+
         while remaining:
             matched = False
             # The param name is typically a single letter
             if len(remaining) >= 1:
                 param_name = remaining[0]
                 rest = remaining[1:]
-                
-                # Try to match a type
-                for type_name in known_types:
-                    if rest.startswith(type_name):
-                        parameters.append((param_name, type_name))
-                        remaining = rest[len(type_name):]
-                        matched = True
-                        break
-                
+
+                # TARGETED HEURISTIC: Detect concatenation artifacts
+                # If the next character is the same as param_name AND it's followed by
+                # a type that starts with that letter, this is likely a concatenation artifact
+                if rest and rest[0] == param_name:
+                    # Check if removing the duplicate allows a type match
+                    for type_name in known_types:
+                        if rest[1:].startswith(type_name) and type_name[0] == param_name:
+                            # This is a concatenation artifact (e.g., "ttruck" where param is 't' and type is 'truck')
+                            parameters.append((param_name, type_name))
+                            remaining = rest[1 + len(type_name):]  # Skip the duplicate letter
+                            matched = True
+                            break
+
+                # Standard matching if no artifact was detected
+                if not matched:
+                    for type_name in known_types:
+                        if rest.startswith(type_name):
+                            parameters.append((param_name, type_name))
+                            remaining = rest[len(type_name):]
+                            matched = True
+                            break
+
                 if not matched:
                     # No type matched, might be end of string or unknown format
                     break
             else:
                 break
-        
+
         return parameters
     
     def verbalize(self, technical_input: str) -> str:
