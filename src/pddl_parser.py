@@ -46,6 +46,54 @@ class Domain:
     actions: List[Action] = field(default_factory=list)
 
 
+@dataclass
+class GroundPredicate:
+    """Represents a ground predicate instance like (at t1 a)"""
+    name: str                       # e.g., "at"
+    arguments: List[str]            # e.g., ["t1", "a"]
+    negated: bool = False           # True if this is (not (pred ...))
+
+
+@dataclass
+class TimedLiteral:
+    """Represents a timed initial literal like (at 22 (not (can_deliver m)))"""
+    time: float
+    predicate: GroundPredicate
+
+
+@dataclass
+class FunctionValue:
+    """Represents a function assignment like (= (time_to_drive a b) 20)"""
+    name: str                       # e.g., "time_to_drive"
+    arguments: List[str]            # e.g., ["a", "b"]
+    value: float                    # e.g., 20.0
+
+
+@dataclass
+class InitialState:
+    """Represents the initial state from (:init ...) section"""
+    predicates: List[GroundPredicate] = field(default_factory=list)
+    functions: List[FunctionValue] = field(default_factory=list)
+    timed_literals: List[TimedLiteral] = field(default_factory=list)
+
+
+@dataclass
+class GoalCondition:
+    """Represents goal conditions from (:goal ...) section"""
+    goals: List[GroundPredicate] = field(default_factory=list)
+    metric: Optional[str] = None    # e.g., "minimize (total-time)"
+
+
+@dataclass
+class Problem:
+    """Represents a parsed PDDL problem"""
+    name: str
+    domain_name: str
+    objects: Dict[str, List[str]] = field(default_factory=dict)  # type -> [object_names]
+    init: InitialState = field(default_factory=InitialState)
+    goal: GoalCondition = field(default_factory=GoalCondition)
+
+
 class PDDLParser:
     """
     Parser for PDDL domain files that extracts structure and comments.
@@ -313,11 +361,217 @@ class PDDLParser:
                     return pred
         return None
 
+    # ==================== Problem Parsing ====================
+
+    def parse_problem_file(self, filepath: str) -> Problem:
+        """Parse a PDDL problem file and return a Problem object."""
+        with open(filepath, 'r') as f:
+            content = f.read()
+        return self.parse_problem_string(content)
+
+    def parse_problem_string(self, content: str) -> Problem:
+        """Parse PDDL problem content from a string."""
+        # Extract problem name
+        problem_name = self._extract_problem_name(content)
+
+        # Extract domain reference
+        domain_name = self._extract_problem_domain(content)
+
+        # Extract objects
+        objects = self._extract_objects(content)
+
+        # Extract initial state
+        init = self._extract_init(content)
+
+        # Extract goal conditions
+        goal = self._extract_goal(content)
+
+        return Problem(
+            name=problem_name,
+            domain_name=domain_name,
+            objects=objects,
+            init=init,
+            goal=goal
+        )
+
+    def _extract_problem_name(self, content: str) -> str:
+        """Extract the problem name from (define (problem NAME) ...)"""
+        match = re.search(r'\(define\s*\(problem\s+(\S+)\)', content)
+        return match.group(1) if match else "unknown"
+
+    def _extract_problem_domain(self, content: str) -> str:
+        """Extract the domain reference from (:domain NAME)"""
+        match = re.search(r'\(:domain\s+(\S+)\)', content)
+        return match.group(1) if match else "unknown"
+
+    def _extract_objects(self, content: str) -> Dict[str, List[str]]:
+        """Extract objects from (:objects ...) section."""
+        objects = {}
+        match = re.search(r'\(:objects\s*(.*?)\)', content, re.DOTALL)
+        if match:
+            objects_content = match.group(1)
+            # Parse lines like: t1 t2 - truck
+            for line in objects_content.split('\n'):
+                line = line.strip()
+                if ' - ' in line:
+                    parts = line.split(' - ')
+                    obj_type = parts[-1].strip()
+                    obj_names = parts[0].strip().split()
+
+                    if obj_type not in objects:
+                        objects[obj_type] = []
+                    objects[obj_type].extend([n for n in obj_names if n])
+        return objects
+
+    def _extract_init(self, content: str) -> InitialState:
+        """Extract initial state from (:init ...) section."""
+        predicates = []
+        functions = []
+        timed_literals = []
+
+        # Find the :init block - handle both cases (with and without :goal after)
+        match = re.search(r'\(:init\s*(.*?)\)\s*(?=\(:goal|\(:metric|$)', content, re.DOTALL)
+        if match:
+            init_content = match.group(1)
+
+            # Parse timed initial literals first: (at 22 (not (can_deliver m)))
+            til_pattern = r'\(at\s+([\d.]+)\s+\((not\s+)?\((\w+)([^)]*)\)\)\)'
+            for m in re.finditer(til_pattern, init_content):
+                time = float(m.group(1))
+                negated = m.group(2) is not None
+                pred_name = m.group(3)
+                args = m.group(4).strip().split()
+
+                timed_literals.append(TimedLiteral(
+                    time=time,
+                    predicate=GroundPredicate(
+                        name=pred_name,
+                        arguments=args,
+                        negated=negated
+                    )
+                ))
+
+            # Parse function assignments: (= (time_to_drive a b) 20)
+            func_pattern = r'\(=\s*\((\w+)([^)]*)\)\s*([\d.]+)\)'
+            for m in re.finditer(func_pattern, init_content):
+                func_name = m.group(1)
+                args = m.group(2).strip().split()
+                value = float(m.group(3))
+
+                functions.append(FunctionValue(
+                    name=func_name,
+                    arguments=args,
+                    value=value
+                ))
+
+            # Parse regular predicates: (at t1 a), (refrigerated t2)
+            # Use a simpler approach - find all predicates and filter
+            simple_pred_pattern = r'\((\w+)([^()]*)\)'
+            for m in re.finditer(simple_pred_pattern, init_content):
+                pred_name = m.group(1)
+                args_str = m.group(2).strip()
+
+                # Skip function assignments (=)
+                if pred_name == '=':
+                    continue
+                # Skip 'not' wrapper
+                if pred_name == 'not':
+                    continue
+                # Skip timed literals: (at NUMBER ...)
+                if pred_name == 'at' and args_str and re.match(r'^[\d.]+\s', args_str):
+                    continue
+                # Skip inner predicates of function assignments
+                if any(f.name == pred_name and f.arguments == args_str.split() for f in functions):
+                    continue
+
+                args = args_str.split() if args_str else []
+
+                # Avoid duplicates from timed literals
+                is_til_pred = any(
+                    tl.predicate.name == pred_name and tl.predicate.arguments == args
+                    for tl in timed_literals
+                )
+                if is_til_pred:
+                    continue
+
+                predicates.append(GroundPredicate(
+                    name=pred_name,
+                    arguments=args,
+                    negated=False
+                ))
+
+        return InitialState(
+            predicates=predicates,
+            functions=functions,
+            timed_literals=timed_literals
+        )
+
+    def _extract_goal(self, content: str) -> GoalCondition:
+        """Extract goal conditions from (:goal ...) section."""
+        goals = []
+        metric = None
+
+        # Find the :goal block - use balanced parentheses matching
+        goal_start = content.find('(:goal')
+        if goal_start != -1:
+            # Find matching closing paren for (:goal ...)
+            paren_count = 0
+            goal_end = goal_start
+            for i, char in enumerate(content[goal_start:], goal_start):
+                if char == '(':
+                    paren_count += 1
+                elif char == ')':
+                    paren_count -= 1
+                    if paren_count == 0:
+                        goal_end = i
+                        break
+
+            goal_block = content[goal_start:goal_end + 1]
+
+            # Check if it's (and ...) or single predicate
+            if '(and' in goal_block:
+                # Extract content inside (and ...)
+                and_start = goal_block.find('(and')
+                # Find all predicates inside
+                pred_pattern = r'\((\w+)\s+([^()]+)\)'
+                for m in re.finditer(pred_pattern, goal_block[and_start:]):
+                    pred_name = m.group(1)
+                    if pred_name == 'and':
+                        continue
+                    args = m.group(2).strip().split() if m.group(2).strip() else []
+                    goals.append(GroundPredicate(
+                        name=pred_name,
+                        arguments=args,
+                        negated=False
+                    ))
+            else:
+                # Single predicate goal
+                match = re.search(r'\(:goal\s*\((\w+)\s+([^)]*)\)\)', goal_block)
+                if match:
+                    goals.append(GroundPredicate(
+                        name=match.group(1),
+                        arguments=match.group(2).strip().split(),
+                        negated=False
+                    ))
+
+        # Extract metric if present
+        metric_match = re.search(r'\(:metric\s+(minimize|maximize)\s+\(([^)]+)\)\)', content)
+        if metric_match:
+            metric = f"{metric_match.group(1)} ({metric_match.group(2)})"
+
+        return GoalCondition(goals=goals, metric=metric)
+
+    def get_all_type_names(self) -> List[str]:
+        """Get all type names defined in the domain."""
+        if self.domain:
+            return list(self.domain.types.keys())
+        return []
+
 
 # Simple test
 if __name__ == "__main__":
     parser = PDDLParser()
-    
+
     # Test with a simple domain string
     test_domain = """
     (define (domain test)
@@ -325,7 +579,7 @@ if __name__ == "__main__":
       (:predicates
         (at ?t - truck ?l - location)  ; ?t is at ?l
       )
-      
+
       ; Drive the truck ?t from ?from to ?to
       (:durative-action drive
         :parameters (?t - truck ?from - location ?to - location)
@@ -340,9 +594,41 @@ if __name__ == "__main__":
       )
     )
     """
-    
+
     domain = parser.parse_string(test_domain)
     print(f"Domain: {domain.name}")
     print(f"Types: {domain.types}")
     print(f"Predicates: {domain.predicates}")
     print(f"Actions: {domain.actions}")
+
+    # Test problem parsing
+    test_problem = """
+    (define (problem test_problem)
+        (:domain test)
+        (:objects
+            t1 t2 - truck
+            a b c - location
+        )
+        (:init
+            (at t1 a)
+            (at t2 b)
+            (= (distance a b) 10)
+            (at 20 (not (available t1)))
+        )
+        (:goal (and
+            (at t1 c)
+            (at t2 a)
+        ))
+        (:metric minimize (total-time))
+    )
+    """
+
+    problem = parser.parse_problem_string(test_problem)
+    print(f"\nProblem: {problem.name}")
+    print(f"Domain: {problem.domain_name}")
+    print(f"Objects: {problem.objects}")
+    print(f"Initial predicates: {problem.init.predicates}")
+    print(f"Initial functions: {problem.init.functions}")
+    print(f"Timed literals: {problem.init.timed_literals}")
+    print(f"Goals: {problem.goal.goals}")
+    print(f"Metric: {problem.goal.metric}")

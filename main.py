@@ -20,6 +20,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from src.pddl_parser import PDDLParser
 from src.nlg_generator import NLGGenerator, PlanStep, parse_plan_file
+from src.domain_config import DomainConfigManager
+from src.domain_summary import DomainSummaryGenerator
+from src.xaip_integration import XAIPIntegration, IntegrationConfig
+from src.predicate_processor import PredicateCatalog
 
 
 def demo_refrigeration_domain():
@@ -232,60 +236,223 @@ EXAMPLE_DOMAIN = """
 """
 
 
+def cmd_summary(args):
+    """Generate domain summary."""
+    parser = PDDLParser()
+    parser.parse_file(args.domain)
+
+    generator = DomainSummaryGenerator(parser)
+
+    if args.format == "json":
+        output = generator.to_json()
+    else:
+        output = generator.to_natural_language()
+
+    if args.output:
+        with open(args.output, 'w') as f:
+            f.write(output)
+        print(f"Summary written to: {args.output}")
+    else:
+        print(output)
+
+
+def cmd_framework(args):
+    """Process XAIPFramework format input."""
+    # Parse domain first
+    parser = PDDLParser()
+    parser.parse_file(args.domain)
+
+    # Set up integration
+    integration = XAIPIntegration()
+    integration.set_known_predicates([p.name for p in parser.domain.predicates])
+    integration.set_known_types(list(parser.domain.types.keys()))
+
+    # Parse framework input
+    framework_output = integration.parse_framework_input(args.input)
+
+    print(f"Parsed: {framework_output.abstraction_type} - {framework_output.predicate_name}")
+    print(f"Parameters: {framework_output.parameters}")
+
+    # Create predicate catalog to find actions using this predicate
+    catalog = PredicateCatalog(parser.domain)
+    nlg = NLGGenerator(parser)
+
+    if framework_output.abstraction_type == "predicate":
+        # Find actions that use this predicate as a precondition
+        actions_using = catalog.get_actions_using_predicate(
+            framework_output.predicate_name, role="precondition"
+        )
+
+        if actions_using:
+            # Generate explanation for each action
+            for action_name in actions_using:
+                # Build abstraction string with action
+                params_str = " ".join(
+                    f"?{p[0]} - {p[1]}" for p in framework_output.parameters
+                )
+                abstraction_str = f"abstract predicate ({framework_output.predicate_name} {params_str}) from action {action_name}"
+
+                print(f"\n--- Abstraction from action: {action_name} ---")
+                try:
+                    abstraction = nlg.parse_abstraction(abstraction_str)
+                    explanation = nlg.generate_explanation(abstraction)
+                    print(explanation)
+                except ValueError as e:
+                    print(f"Error: {e}")
+        else:
+            print(f"\nNo actions found using predicate '{framework_output.predicate_name}' as a precondition")
+
+    elif framework_output.abstraction_type == "duration":
+        abstraction_str = f"abstract duration from action {framework_output.predicate_name}"
+        try:
+            abstraction = nlg.parse_abstraction(abstraction_str)
+            explanation = nlg.generate_explanation(abstraction)
+            print("\nExplanation:")
+            print(explanation)
+        except ValueError as e:
+            print(f"Error: {e}")
+
+    else:
+        print(f"\nUnsupported abstraction type: {framework_output.abstraction_type}")
+
+
+def cmd_watch(args):
+    """Watch mode for XAIPFramework integration."""
+    from pathlib import Path
+
+    # Parse domain
+    parser = PDDLParser()
+    parser.parse_file(args.domain)
+
+    # Set up integration
+    config = IntegrationConfig(common_dir=Path(args.common_dir))
+    integration = XAIPIntegration(config)
+    integration.set_known_predicates([p.name for p in parser.domain.predicates])
+    integration.set_known_types(list(parser.domain.types.keys()))
+
+    # Create NLG generator
+    nlg = NLGGenerator(parser)
+
+    def process_request(request: str) -> str:
+        """Process a single request."""
+        try:
+            framework_output = integration.parse_framework_input(request)
+            abstraction_str = framework_output.to_abstraction_string()
+            abstraction = nlg.parse_abstraction(abstraction_str)
+            return nlg.generate_explanation(abstraction)
+        except Exception as e:
+            return f"Error: {e}"
+
+    print(f"Watching for requests in: {args.common_dir}")
+    integration.watch_for_requests(process_request)
+
+
+def cmd_problem(args):
+    """Verbalize a problem file."""
+    parser = PDDLParser()
+    parser.parse_file(args.domain)
+    problem = parser.parse_problem_file(args.problem)
+
+    nlg = NLGGenerator(parser)
+    print(nlg.verbalize_problem_summary(problem))
+
+
 def main():
     """Main entry point."""
     arg_parser = argparse.ArgumentParser(
-        description="Generate natural language explanations for AI planning abstractions"
+        description="PlanVerb NLG - Natural Language for AI Planning",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Commands:
+  explain   Generate explanation for an abstraction (default)
+  summary   Generate domain summary
+  framework Process XAIPFramework format input
+  watch     Watch mode for framework integration
+  problem   Verbalize a problem file
+
+Examples:
+  python main.py --demo
+  python main.py summary -d domains/refrigerated_delivery_domain.pddl
+  python main.py framework -d domain.pddl -i "predicate-refrigeratedttruck"
+  python main.py problem -d domain.pddl -p problem.pddl
+        """
     )
-    arg_parser.add_argument(
-        "--domain", "-d",
-        help="Path to PDDL domain file"
-    )
-    arg_parser.add_argument(
-        "--abstraction", "-a", 
-        help="Abstraction specification string"
-    )
-    arg_parser.add_argument(
-        "--plan", "-p",
-        help="Path to plan file (optional)"
-    )
-    arg_parser.add_argument(
-        "--demo",
-        action="store_true",
-        help="Run demo with refrigeration domain"
-    )
-    
+
+    subparsers = arg_parser.add_subparsers(dest="command")
+
+    # Summary command
+    summary_parser = subparsers.add_parser("summary", help="Generate domain summary")
+    summary_parser.add_argument("--domain", "-d", required=True, help="Path to PDDL domain file")
+    summary_parser.add_argument("--output", "-o", help="Output file (default: stdout)")
+    summary_parser.add_argument("--format", "-f", choices=["text", "json"], default="text")
+
+    # Framework command
+    framework_parser = subparsers.add_parser("framework", help="Process XAIPFramework input")
+    framework_parser.add_argument("--domain", "-d", required=True, help="Path to PDDL domain file")
+    framework_parser.add_argument("--input", "-i", required=True, help="Framework format input")
+
+    # Watch command
+    watch_parser = subparsers.add_parser("watch", help="Watch mode for framework")
+    watch_parser.add_argument("--domain", "-d", required=True, help="Path to PDDL domain file")
+    watch_parser.add_argument("--common-dir", required=True, help="XAIPFramework common directory")
+
+    # Problem command
+    problem_parser = subparsers.add_parser("problem", help="Verbalize a problem file")
+    problem_parser.add_argument("--domain", "-d", required=True, help="Path to PDDL domain file")
+    problem_parser.add_argument("--problem", "-p", required=True, help="Path to PDDL problem file")
+
+    # Legacy arguments for backward compatibility
+    arg_parser.add_argument("--domain", "-d", help="Path to PDDL domain file")
+    arg_parser.add_argument("--abstraction", "-a", help="Abstraction specification string")
+    arg_parser.add_argument("--plan", "-p", help="Path to plan file (optional)")
+    arg_parser.add_argument("--demo", action="store_true", help="Run demo")
+
     args = arg_parser.parse_args()
-    
+
+    # Handle subcommands
+    if args.command == "summary":
+        cmd_summary(args)
+        return
+    elif args.command == "framework":
+        cmd_framework(args)
+        return
+    elif args.command == "watch":
+        cmd_watch(args)
+        return
+    elif args.command == "problem":
+        cmd_problem(args)
+        return
+
+    # Legacy behavior
     if args.demo or (not args.domain and not args.abstraction):
         demo_refrigeration_domain()
         return
-    
+
     if not args.domain or not args.abstraction:
         print("Error: Both --domain and --abstraction are required")
         print("Or use --demo to see example output")
         arg_parser.print_help()
         sys.exit(1)
-    
+
     # Parse domain
     parser = PDDLParser()
     domain = parser.parse_file(args.domain)
     print(f"Parsed domain: {domain.name}")
-    
+
     # Create generator
     nlg = NLGGenerator(parser)
-    
+
     # Parse abstraction
     abstraction = nlg.parse_abstraction(args.abstraction)
-    
+
     # Parse plan if provided
     plan = None
     if args.plan:
         plan = parse_plan_file(args.plan)
-    
+
     # Generate explanation
     explanation = nlg.generate_explanation(abstraction, new_plan=plan)
-    
+
     print("\n" + "=" * 50)
     print("Generated Explanation:")
     print("=" * 50)
