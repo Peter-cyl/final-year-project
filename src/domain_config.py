@@ -43,6 +43,10 @@ class DomainProfile:
     # Action descriptions (overrides PDDL comments if provided)
     action_descriptions: Dict[str, str] = field(default_factory=dict)
 
+    # Action infinitives for "in order to..." context (drops subject, uses base verb)
+    # e.g. {"drive_truck": "drive {1} from {2} to {3}"}
+    action_infinitives: Dict[str, str] = field(default_factory=dict)
+
     # Templates for different verbalization contexts
     templates: Dict[str, str] = field(default_factory=dict)
 
@@ -128,11 +132,18 @@ class DomainConfigManager:
                 "at": "{0} is at {1}"
             },
             action_descriptions={
-                "load_truck": "Load {0} into truck {1} at {2}",
-                "board_truck": "Driver {0} boards truck {1} at {2}",
-                "drive_truck": "Driver {0} drives truck {1} from {2} to {3}",
-                "deliver_produce": "Deliver {0} from truck {1} to {2}",
-                "extend_meat_life": "Keep the meat fresh in refrigerated truck {0}"
+                "load_truck": "load {0} into {1} at {2}",
+                "board_truck": "{0} boards {1} at {2}",
+                "drive_truck": "{0} drives {1} from {2} to {3}",
+                "deliver_produce": "deliver {0} from {1} to {2}",
+                "extend_meat_life": "keep {0} fresh in {1}"
+            },
+            action_infinitives={
+                "load_truck": "load {0} into {1} at {2}",
+                "board_truck": "board {1} at {2}",
+                "drive_truck": "drive {1} from {2} to {3}",
+                "deliver_produce": "deliver {0} from {1} to {2}",
+                "extend_meat_life": "keep {0} fresh in {1}"
             },
             templates={
                 "predicate": "If we did not require that {precondition_desc} in order to {action_desc}, then we could:",
@@ -195,10 +206,12 @@ class DomainConfigManager:
                 "on_board": "{0} is on board {1}",
                 "channel_free": "{0} has a free channel",
                 "in_sun": "{0} is in sunlight",
+                "notcharging": "{0} is not currently charging",
                 "energy": "{0} has energy level {1}"
             },
             action_descriptions={
                 "navigate": "Rover {0} navigates from {1} to {2}",
+                "recharge": "Rover {0} recharges at {1}",
                 "sample_soil": "Rover {0} samples soil at {2} using store {1}",
                 "sample_rock": "Rover {0} samples rock at {2} using store {1}",
                 "drop": "Rover {0} empties store {1}",
@@ -207,6 +220,18 @@ class DomainConfigManager:
                 "communicate_soil_data": "Rover {0} communicates soil data from {2} to lander {1}",
                 "communicate_rock_data": "Rover {0} communicates rock data from {2} to lander {1}",
                 "communicate_image_data": "Rover {0} communicates image of {2} to lander {1}"
+            },
+            action_infinitives={
+                "navigate": "navigate {0} from {1} to {2}",
+                "recharge": "recharge {0} at {1}",
+                "sample_soil": "sample soil at {2} using {0} with store {1}",
+                "sample_rock": "sample rock at {2} using {0} with store {1}",
+                "drop": "empty store {1} on {0}",
+                "calibrate": "calibrate camera {1} on {0} at {2} using target {3}",
+                "take_image": "take image of {2} in mode {3} using {0} at {4}",
+                "communicate_soil_data": "communicate soil data from {2} via {0} to lander {1}",
+                "communicate_rock_data": "communicate rock data from {2} via {0} to lander {1}",
+                "communicate_image_data": "communicate image of {2} via {0} to lander {1}"
             }
         )
 
@@ -248,6 +273,13 @@ class DomainConfigManager:
                 "switch_off": "Switch off {0} on satellite {1}",
                 "calibrate": "Calibrate {0} on {1} pointing at {2}",
                 "take_image": "Take image of {1} in mode {2} using {0} on {3}"
+            },
+            action_infinitives={
+                "turn_to": "turn {0} from {2} to {1}",
+                "switch_on": "switch on {0} on {1}",
+                "switch_off": "switch off {0} on {1}",
+                "calibrate": "calibrate {0} on {1} pointing at {2}",
+                "take_image": "take image of {1} in mode {2} using {0} on {3}"
             }
         )
 
@@ -292,6 +324,13 @@ class DomainConfigManager:
                 "load-train": "Load {2} onto train at {0} from {1}",
                 "unload-train": "Unload {2} from train at {0} to {1}",
                 "move-train": "Move train from {0} to {1}"
+            },
+            action_infinitives={
+                "build-rail": "build rail from {0} to {1}",
+                "build-train": "build a train at {0}",
+                "load-train": "load {2} onto the train at {0} from {1}",
+                "unload-train": "unload {2} from the train at {0} to {1}",
+                "move-train": "move the train from {0} to {1}"
             }
         )
 
@@ -314,22 +353,32 @@ class DomainConfigManager:
                 "exercise": "the exercise"
             },
             predicate_descriptions={
-                "available": "{0} is available on {1}",
-                "done_meal": "{0} has completed meal {1} on {2}",
-                "done_sleep": "{0} has slept on {1}",
-                "done_exercise": "{0} has exercised ({1}) on {2}",
-                "done_mcs": "{0} has completed MCS on {1}",
-                "done_rpcm": "{0} has completed RPCM on {1}",
-                "initiated": "day {0} has been initiated",
-                "next": "{0} follows {1}"
+                "active": "{0} is active on {1}",
+                "done_meal": "{0} has eaten on {1}",
+                "done_exercise": "{0} has exercised on {1}",
+                "gone_to_sleep": "{0} has gone to sleep on {1}",
+                "changed": "filter {0} has been changed on {1}",
+                "payload_act_completed": "payload activity {0} has been completed",
+                "currentday": "the current day is {0}",
+                "next": "{1} follows {0}"
             },
             action_descriptions={
-                "do_meal": "{0} eats meal {1} on {2}",
-                "do_sleep": "{0} sleeps on {1}",
-                "do_exercise": "{0} exercises ({1}) on {2}",
-                "do_mcs": "{0} performs MCS on {1}",
-                "do_rpcm": "{0} performs RPCM on {1}",
-                "initiate_day": "Initiate day {0} after {1}"
+                "wake_up": "{0} wakes up on {1}",
+                "have_meal": "{0} has a meal on {1}",
+                "exercise": "{0} exercises on {1}",
+                "sleep": "{0} sleeps on {1}",
+                "change_filter": "{0} changes filter {1} on {2}",
+                "conduct_payload_activity": "{0} conducts payload activity {1} on {2}",
+                "move_to_next_day": "Move to next day from {0} to {1}"
+            },
+            action_infinitives={
+                "wake_up": "wake up {0} on {1}",
+                "have_meal": "have {0} eat a meal on {1}",
+                "exercise": "have {0} exercise on {1}",
+                "sleep": "have {0} sleep on {1}",
+                "change_filter": "change filter {1} using {0} on {2}",
+                "conduct_payload_activity": "conduct payload activity {1} with {0} on {2}",
+                "move_to_next_day": "move to next day from {0} to {1}"
             }
         )
 

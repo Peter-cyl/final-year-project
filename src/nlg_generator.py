@@ -120,6 +120,104 @@ class NLGGenerator:
                 "cereal": "",
             }
 
+    def _get_action_description(self, action: 'Action', bindings: Optional[Dict[str, str]] = None) -> str:
+        """
+        Get a human-readable description for an action.
+        Prefers profile action_descriptions (positional {0},{1} format) over raw PDDL comments.
+        """
+        action_name = action.name
+
+        # Try profile action_descriptions first (clean, positional format)
+        if self.profile and action_name in self.profile.action_descriptions:
+            desc_template = self.profile.action_descriptions[action_name]
+            if bindings:
+                # Map positional {0},{1},... to readable values based on action parameter order
+                positional_values = []
+                for param in action.parameters:
+                    if param.name in bindings:
+                        positional_values.append(self._get_readable_value(bindings[param.name]))
+                    else:
+                        positional_values.append(param.name)
+                try:
+                    return desc_template.format(*positional_values)
+                except (IndexError, KeyError):
+                    pass  # Fall through to comment-based approach
+            return desc_template
+
+        # Fallback to PDDL comment with parameter substitution
+        if action.comment:
+            desc = action.comment
+            if bindings:
+                desc = self._substitute_parameters(desc, bindings)
+            return desc
+
+        # Last resort: action name
+        return action_name.replace("_", " ")
+
+    def _get_action_infinitive(self, action: 'Action', bindings: Optional[Dict[str, str]] = None) -> str:
+        """
+        Get the infinitive form of an action description for 'in order to ...' context.
+        E.g. 'drive Truck 1 from Depot to Butcher' instead of 'Driver 1 drives Truck 1 from ...'
+        Falls back to _get_action_description if no infinitive is defined.
+        """
+        action_name = action.name
+
+        # Try profile action_infinitives first
+        if self.profile and hasattr(self.profile, 'action_infinitives') and action_name in self.profile.action_infinitives:
+            desc_template = self.profile.action_infinitives[action_name]
+            if bindings:
+                positional_values = []
+                for param in action.parameters:
+                    if param.name in bindings:
+                        positional_values.append(self._get_readable_value(bindings[param.name]))
+                    else:
+                        positional_values.append(param.name)
+                try:
+                    return desc_template.format(*positional_values)
+                except (IndexError, KeyError):
+                    pass
+            return desc_template
+
+        # Fallback to regular description
+        return self._get_action_description(action, bindings)
+
+    def _get_precondition_description(self, predicate_name: str, action: 'Action',
+                                       bindings: Optional[Dict[str, str]] = None) -> str:
+        """
+        Get a human-readable description for a precondition.
+        Prefers profile predicate_descriptions over raw PDDL comments.
+        """
+        # Try profile predicate_descriptions first
+        if self.profile and predicate_name in self.profile.predicate_descriptions:
+            desc_template = self.profile.predicate_descriptions[predicate_name]
+            if bindings:
+                # Find the predicate's parameters from the action's preconditions
+                for precond in action.preconditions:
+                    if precond.name == predicate_name:
+                        positional_values = []
+                        for param_var in precond.parameters:
+                            if param_var in bindings:
+                                positional_values.append(self._get_readable_value(bindings[param_var]))
+                            else:
+                                positional_values.append(param_var)
+                        try:
+                            return desc_template.format(*positional_values)
+                        except (IndexError, KeyError):
+                            break
+            return desc_template
+
+        # Fallback to PDDL comment
+        for precond in action.preconditions:
+            if precond.name == predicate_name and precond.comment:
+                desc = precond.comment
+                if bindings:
+                    desc = self._substitute_parameters(desc, bindings)
+                return desc
+
+        # Last resort: generate from predicate name
+        return self._default_predicate_description(predicate_name,
+                                                    getattr(self, '_last_abstraction_params', {}))
+
     def _get_catalog(self) -> 'PredicateCatalog':
         """Get or create the predicate catalog (lazy loading)."""
         if self.catalog is None:
@@ -214,31 +312,16 @@ class NLGGenerator:
         if not action:
             return f"Error: Action {abstraction.action_name} not found"
         
-        # Find the precondition that was abstracted
-        precondition_comment = None
-        for precond in action.preconditions:
-            if precond.name == abstraction.predicate_name:
-                precondition_comment = precond.comment
-                break
-        
-        # If no comment found, generate a default one
-        if not precondition_comment:
-            precondition_comment = self._default_predicate_description(
-                abstraction.predicate_name, 
-                abstraction.parameters
-            )
-        
-        # Get action description from comment
-        action_desc = action.comment if action.comment else action.name
-        
-        # Apply parameter bindings if provided
-        if parameter_bindings:
-            precondition_comment = self._substitute_parameters(precondition_comment, parameter_bindings)
-            action_desc = self._substitute_parameters(action_desc, parameter_bindings)
+        # Get descriptions using profile-aware methods
+        precondition_desc = self._get_precondition_description(
+            abstraction.predicate_name, action, parameter_bindings
+        )
+        # Use infinitive form for "in order to ..." context
+        action_desc = self._get_action_infinitive(action, parameter_bindings)
         
         # Build the explanation
         explanation = self.templates["predicate"].format(
-            precondition_desc=precondition_comment,
+            precondition_desc=precondition_desc,
             action_desc=action_desc
         )
         
@@ -257,10 +340,7 @@ class NLGGenerator:
         if not action:
             return f"Error: Action {abstraction.action_name} not found"
         
-        action_desc = action.comment if action.comment else action.name
-        
-        if parameter_bindings:
-            action_desc = self._substitute_parameters(action_desc, parameter_bindings)
+        action_desc = self._get_action_description(action, parameter_bindings)
         
         explanation = f"If {action_desc} took 0 minutes, then we could:"
         
@@ -292,13 +372,124 @@ class NLGGenerator:
         return f"{readable_name} ({param_desc})"
     
     def _substitute_parameters(self, text: str, bindings: Dict[str, str]) -> str:
-        """Replace parameter variables with their bound values."""
+        """
+        Replace parameter variables with their bound values,
+        with context-aware deduplication to avoid phrases like
+        'Driver Driver 1' or 'the meat the meat'.
+        """
+        import re as _re
         result = text
         for var, value in bindings.items():
-            # Get human-readable name using profile-aware method
             readable_value = self._get_readable_value(value)
-            result = result.replace(var, readable_value)
+
+            # Find every occurrence of var in the current result
+            # and check context before it to avoid redundancy
+            while var in result:
+                idx = result.index(var)
+                prefix = result[:idx]
+                suffix = result[idx + len(var):]
+
+                cleaned_value = self._deduplicate_prefix(prefix, readable_value)
+                result = prefix + cleaned_value + suffix
+
+        # Clean up any remaining awkward patterns
+        result = self._cleanup_text(result)
         return result
+
+    def _deduplicate_prefix(self, prefix: str, readable_value: str) -> str:
+        """
+        Given the text before a variable and the readable value to insert,
+        remove redundant type words. Handles cases like:
+          prefix='Driver '     + value='Driver 1'    → 'Driver 1'    (strip 'Driver ' from prefix handled by returning just '1' — actually we keep value and strip prefix)
+
+        Strategy: if the prefix ends with a word/phrase that the readable_value
+        starts with (case-insensitive), remove the overlap from the readable_value.
+        Also handles 'the X' patterns and 'location' prefix.
+        """
+        import re as _re
+
+        # Normalise for comparison
+        prefix_stripped = prefix.rstrip()
+        value_lower = readable_value.lower()
+
+        # Patterns to check (longest first):
+        # e.g. prefix ends with "the truck " and value is "Truck 1"
+        # e.g. prefix ends with "Driver " and value is "Driver 1"
+        # e.g. prefix ends with "the meat " and value is "the meat"
+        # e.g. prefix ends with "the produce " and value is "the cereal"
+        # e.g. prefix ends with "location " and value is "Depot"
+
+        # Case 1: prefix ends with the exact readable value (e.g. "the meat " + "the meat")
+        # Check if the last N words of prefix match the start of readable_value
+        prefix_words = prefix_stripped.split()
+        value_words = readable_value.split()
+
+        if prefix_words and value_words:
+            # Check for full overlap: prefix ends with same words as value starts with
+            for overlap_len in range(min(len(prefix_words), len(value_words)), 0, -1):
+                prefix_tail = " ".join(prefix_words[-overlap_len:]).lower()
+                value_head = " ".join(value_words[:overlap_len]).lower()
+                if prefix_tail == value_head:
+                    # Remove the overlapping words from the readable value
+                    remaining = " ".join(value_words[overlap_len:])
+                    if remaining:
+                        return remaining
+                    else:
+                        # The entire value is redundant with prefix — keep value, strip prefix overlap
+                        # We need to return the value as-is but remove the overlap from prefix
+                        # Since we can't modify prefix here, return value and we'll handle cleanup
+                        return readable_value
+
+            # Case 2: prefix ends with "the <type>" and value is "the <specific>"
+            # e.g. "the produce " + "the cereal" → just "the cereal" (remove "the produce" from prefix)
+            # or "the truck " + "Truck 1" → "Truck 1" (remove "the truck" from prefix)
+            if len(prefix_words) >= 2 and prefix_words[-2].lower() == "the":
+                type_word = prefix_words[-1].lower()
+                value_first = value_words[0].lower()
+
+                # "the truck" + "Truck 1" → value starts with the type word
+                if value_first == type_word:
+                    return readable_value  # will be cleaned up to remove "the truck" from prefix
+
+                # "the produce" + "the cereal" → different article+noun, keep value
+                if value_words[0].lower() == "the":
+                    return readable_value  # cleanup will handle prefix
+
+            # Case 3: prefix ends with "location" and value is a proper name
+            if prefix_words and prefix_words[-1].lower() == "location":
+                return readable_value  # cleanup will strip "location "
+
+        return readable_value
+
+    def _cleanup_text(self, text: str) -> str:
+        """
+        Post-process text to fix remaining awkward patterns.
+        """
+        import re as _re
+
+        # Fix "Driver Driver 1" → "Driver 1"
+        text = _re.sub(r'\b([Dd]river)\s+\1\s+', r'\1 ', text, flags=_re.IGNORECASE)
+
+        # Fix "the truck Truck 1" → "Truck 1"  (remove "the truck " before "Truck N")
+        text = _re.sub(r'\bthe\s+truck\s+(Truck\s+\d+)', r'\1', text, flags=_re.IGNORECASE)
+
+        # Fix "the meat the meat" → "the meat"
+        text = _re.sub(r'\b(the\s+\w+)\s+\1\b', r'\1', text, flags=_re.IGNORECASE)
+
+        # Fix "the produce the cereal" → "the cereal"
+        # More general: "the <type> the <specific>" → "the <specific>"
+        text = _re.sub(r'\bthe\s+(?:produce|product)\s+(the\s+\w+)', r'\1', text, flags=_re.IGNORECASE)
+
+        # Fix "location Depot" → "Depot" (when it reads awkwardly)
+        text = _re.sub(r'\blocation\s+([A-Z]\w+)', r'\1', text)
+
+        # Fix double spaces
+        text = _re.sub(r'  +', ' ', text)
+
+        # Fix space before punctuation
+        text = _re.sub(r'\s+([,.])', r'\1', text)
+
+        return text.strip()
     
     def _verbalize_plan(self, plan: List[PlanStep]) -> str:
         """Convert a plan to natural language."""
@@ -306,22 +497,20 @@ class NLGGenerator:
         for step in plan:
             action = self.parser.get_action_by_name(step.action_name)
 
-            if action and action.comment:
-                # Use the comment as template
-                desc = action.comment
-
-                # Substitute parameters
+            if action:
+                # Build bindings dict
+                bindings = {}
                 for i, param in enumerate(action.parameters):
                     if i < len(step.parameters):
-                        ground_value = step.parameters[i]
-                        readable_value = self._get_readable_value(ground_value)
-                        desc = desc.replace(param.name, readable_value)
+                        bindings[param.name] = step.parameters[i]
+                desc = self._get_action_description(action, bindings)
             else:
                 # Fallback: just use action name and parameters
                 readable_params = [self._get_readable_value(p) for p in step.parameters]
                 desc = f"{step.action_name} {' '.join(readable_params)}"
 
             # Format the line
+            desc = desc[0].upper() + desc[1:] if desc else desc
             duration_str = f"takes {step.duration} minutes" if step.duration else ""
             lines.append(f"{step.time:.2f}: {desc} ({duration_str})")
 
@@ -344,20 +533,12 @@ class NLGGenerator:
             readable_params = [self._get_readable_value(p) for p in ground_params]
             return f"{action_name}({', '.join(readable_params)})"
 
-        if action.comment:
-            desc = action.comment
-
-            # Substitute parameters
-            for i, param in enumerate(action.parameters):
-                if i < len(ground_params):
-                    ground_value = ground_params[i]
-                    readable_value = self._get_readable_value(ground_value)
-                    desc = desc.replace(param.name, readable_value)
-
-            return desc
-        else:
-            readable_params = [self._get_readable_value(p) for p in ground_params]
-            return f"{action_name}({', '.join(readable_params)})"
+        # Build bindings dict
+        bindings = {}
+        for i, param in enumerate(action.parameters):
+            if i < len(ground_params):
+                bindings[param.name] = ground_params[i]
+        return self._get_action_description(action, bindings)
 
     def verbalize_effects(self, action_name: str,
                          ground_params: Optional[List[str]] = None) -> str:
