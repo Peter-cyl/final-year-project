@@ -130,19 +130,17 @@ class NLGGenerator:
         # Try profile action_descriptions first (clean, positional format)
         if self.profile and action_name in self.profile.action_descriptions:
             desc_template = self.profile.action_descriptions[action_name]
-            if bindings:
-                # Map positional {0},{1},... to readable values based on action parameter order
-                positional_values = []
-                for param in action.parameters:
-                    if param.name in bindings:
-                        positional_values.append(self._get_readable_value(bindings[param.name]))
-                    else:
-                        positional_values.append(param.name)
-                try:
-                    return desc_template.format(*positional_values)
-                except (IndexError, KeyError):
-                    pass  # Fall through to comment-based approach
-            return desc_template
+            # Map positional {0},{1},... to readable values or variable names
+            positional_values = []
+            for param in action.parameters:
+                if bindings and param.name in bindings:
+                    positional_values.append(self._get_readable_value(bindings[param.name]))
+                else:
+                    positional_values.append(param.name)
+            try:
+                return desc_template.format(*positional_values)
+            except (IndexError, KeyError):
+                pass  # Fall through to comment-based approach
 
         # Fallback to PDDL comment with parameter substitution
         if action.comment:
@@ -165,18 +163,16 @@ class NLGGenerator:
         # Try profile action_infinitives first
         if self.profile and hasattr(self.profile, 'action_infinitives') and action_name in self.profile.action_infinitives:
             desc_template = self.profile.action_infinitives[action_name]
-            if bindings:
-                positional_values = []
-                for param in action.parameters:
-                    if param.name in bindings:
-                        positional_values.append(self._get_readable_value(bindings[param.name]))
-                    else:
-                        positional_values.append(param.name)
-                try:
-                    return desc_template.format(*positional_values)
-                except (IndexError, KeyError):
-                    pass
-            return desc_template
+            positional_values = []
+            for param in action.parameters:
+                if bindings and param.name in bindings:
+                    positional_values.append(self._get_readable_value(bindings[param.name]))
+                else:
+                    positional_values.append(param.name)
+            try:
+                return desc_template.format(*positional_values)
+            except (IndexError, KeyError):
+                pass
 
         # Fallback to regular description
         return self._get_action_description(action, bindings)
@@ -190,20 +186,19 @@ class NLGGenerator:
         # Try profile predicate_descriptions first
         if self.profile and predicate_name in self.profile.predicate_descriptions:
             desc_template = self.profile.predicate_descriptions[predicate_name]
-            if bindings:
-                # Find the predicate's parameters from the action's preconditions
-                for precond in action.preconditions:
-                    if precond.name == predicate_name:
-                        positional_values = []
-                        for param_var in precond.parameters:
-                            if param_var in bindings:
-                                positional_values.append(self._get_readable_value(bindings[param_var]))
-                            else:
-                                positional_values.append(param_var)
-                        try:
-                            return desc_template.format(*positional_values)
-                        except (IndexError, KeyError):
-                            break
+            # Find the predicate's parameters from the action's preconditions
+            for precond in action.preconditions:
+                if precond.name == predicate_name:
+                    positional_values = []
+                    for param_var in precond.parameters:
+                        if bindings and param_var in bindings:
+                            positional_values.append(self._get_readable_value(bindings[param_var]))
+                        else:
+                            positional_values.append(param_var)
+                    try:
+                        return desc_template.format(*positional_values)
+                    except (IndexError, KeyError):
+                        break
             return desc_template
 
         # Fallback to PDDL comment

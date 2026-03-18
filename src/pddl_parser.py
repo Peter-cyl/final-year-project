@@ -163,7 +163,7 @@ class PDDLParser:
         if match:
             pred_content = match.group(1)
             # Find each predicate with optional preceding/inline comment
-            pattern = r'(?:;\s*([^\n]*)\n\s*)?\((\w+)([^)]*)\)(?:\s*;\s*([^\n]*))?'
+            pattern = r'(?:;\s*([^\n]*)\n\s*)?\(([\w-]+)([^)]*)\)(?:\s*;\s*([^\n]*))?'
             for m in re.finditer(pattern, pred_content):
                 pre_comment = m.group(1)
                 pred_name = m.group(2)
@@ -189,11 +189,11 @@ class PDDLParser:
         
         # Find all durative-action blocks
         # First, split content by action declarations
-        action_blocks = re.split(r'(?=;\s*[A-Z].*\n\s*\(:durative-action)', content)
+        action_blocks = re.split(r'(?=;\s*[A-Za-z].*\n\s*\(:durative-action)', content)
         
         for block in action_blocks:
             # Pattern to find durative-action with preceding comment
-            action_pattern = r';\s*([^\n]+)\n\s*\(:durative-action\s+(\w+)(.*)'
+            action_pattern = r';\s*([^\n]+)\n\s*\(:durative-action\s+([\w-]+)(.*)'
             match = re.search(action_pattern, block, re.DOTALL)
             
             if match:
@@ -300,7 +300,7 @@ class PDDLParser:
             
             # Find predicates with optional inline comments
             # Pattern matches things like: (over all (at ?truck ?loc)) ; comment
-            pattern = r'\((over all|at start|at end)\s*\((\w+)([^)]*)\)\)(?:\s*;\s*([^\n]*))?'
+            pattern = r'\((over all|at start|at end)\s*\(([\w-]+)([^)]*)\)\)(?:\s*;\s*([^\n]*))?'
             
             for m in re.finditer(pattern, cond_content):
                 timing = m.group(1)
@@ -327,7 +327,7 @@ class PDDLParser:
             effect_content = match.group(1)
             
             # Pattern for effects like (at end (at ?p ?l))
-            pattern = r'\((at start|at end)\s*\((not\s*)?\((\w+)([^)]*)\)\)\)'
+            pattern = r'\((at start|at end)\s*\((not\s*)?\(([\w-]+)([^)]*)\)\)\)'
             
             for m in re.finditer(pattern, effect_content):
                 timing = m.group(1)
