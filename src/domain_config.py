@@ -96,6 +96,7 @@ class DomainConfigManager:
         self.profiles["rover"] = self._rover_profile()
         self.profiles["satellite"] = self._satellite_profile()
         self.profiles["settlers"] = self._settlers_profile()
+        self.profiles["building"] = self._settlers_profile()  # Domain file uses "building" as name
         self.profiles["crewplanning"] = self._crewplanning_profile()
 
     def _refrigeration_profile(self) -> DomainProfile:
@@ -320,17 +321,33 @@ class DomainConfigManager:
             },
             action_descriptions={
                 "build-rail": "Build rail from {0} to {1}",
-                "build-train": "Build train at {0}",
-                "load-train": "Load {2} onto train at {0} from {1}",
-                "unload-train": "Unload {2} from train at {0} to {1}",
-                "move-train": "Move train from {0} to {1}"
+                "build-train": "Build train {1} at {0}",
+                "build-cart": "Build cart {1} at {0}",
+                "load-train": "Load {2} onto train {0} at {1}",
+                "load-cart": "Load {2} onto cart {0} at {1}",
+                "unload-train": "Unload {2} from train {0} at {1}",
+                "unload-cart": "Unload {2} from cart {0} at {1}",
+                "move-train": "Move train {0} from {1} to {2}",
+                "move-cart": "Move cart {0} from {1} to {2}",
+                "build-house": "Build a house at {0}",
+                "build-big-house": "Build a large house at {0}",
+                "find-resource": "Gather building resources at {0}",
+                "mine-iron": "Mine iron ore at {0}"
             },
             action_infinitives={
                 "build-rail": "build rail from {0} to {1}",
-                "build-train": "build a train at {0}",
-                "load-train": "load {2} onto the train at {0} from {1}",
-                "unload-train": "unload {2} from the train at {0} to {1}",
-                "move-train": "move the train from {0} to {1}"
+                "build-train": "build train {1} at {0}",
+                "build-cart": "build cart {1} at {0}",
+                "load-train": "load {2} onto train {0} at {1}",
+                "load-cart": "load {2} onto cart {0} at {1}",
+                "unload-train": "unload {2} from train {0} at {1}",
+                "unload-cart": "unload {2} from cart {0} at {1}",
+                "move-train": "move train {0} from {1} to {2}",
+                "move-cart": "move cart {0} from {1} to {2}",
+                "build-house": "build a house at {0}",
+                "build-big-house": "build a large house at {0}",
+                "find-resource": "gather building resources at {0}",
+                "mine-iron": "mine iron ore at {0}"
             }
         )
 

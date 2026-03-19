@@ -239,7 +239,7 @@ class NLGGenerator:
         import re
         
         # Pattern for predicate abstraction
-        pred_pattern = r'abstract predicate \((\w+)([^)]*)\) from action (\w+)'
+        pred_pattern = r'abstract predicate \(([\w-]+)([^)]*)\) from action ([\w-]+)'
         match = re.match(pred_pattern, abstraction_str)
         
         if match:
@@ -261,7 +261,7 @@ class NLGGenerator:
             )
         
         # Pattern for duration abstraction
-        dur_pattern = r'abstract duration from action (\w+)'
+        dur_pattern = r'abstract duration from action ([\w-]+)'
         match = re.match(dur_pattern, abstraction_str)
         
         if match:
@@ -270,6 +270,24 @@ class NLGGenerator:
                 predicate_name="",
                 action_name=match.group(1),
                 parameters={}
+            )
+        
+        # Pattern for TIL abstraction: "abstract til can_deliver" or "abstract til (can_deliver ?p - prod)"
+        til_pattern = r'abstract til\s+\(?([\w-]+)([^)]*)\)?'
+        match = re.match(til_pattern, abstraction_str)
+        
+        if match:
+            pred_name = match.group(1)
+            params_str = match.group(2) if match.group(2) else ""
+            params = {}
+            param_pattern = r'\?(\w+)\s*-\s*(\w+)'
+            for p in re.finditer(param_pattern, params_str):
+                params[f"?{p.group(1)}"] = p.group(2)
+            return Abstraction(
+                abstraction_type="til",
+                predicate_name=pred_name,
+                action_name="",
+                parameters=params
             )
         
         raise ValueError(f"Could not parse abstraction: {abstraction_str}")
@@ -335,9 +353,9 @@ class NLGGenerator:
         if not action:
             return f"Error: Action {abstraction.action_name} not found"
         
-        action_desc = self._get_action_description(action, parameter_bindings)
+        action_desc = self._get_action_infinitive(action, parameter_bindings)
         
-        explanation = f"If {action_desc} took 0 minutes, then we could:"
+        explanation = f"If it took 0 minutes to {action_desc}, then we could:"
         
         if new_plan:
             explanation += "\n\n" + self._verbalize_plan(new_plan)
@@ -349,7 +367,22 @@ class NLGGenerator:
                                   new_plan: Optional[List[PlanStep]]) -> str:
         """Generate explanation for timed initial literal abstraction."""
         
-        explanation = f"If it were not the case that {abstraction.predicate_name} became false at the specified time, then we could:"
+        # Try to get a readable predicate description
+        pred_desc = abstraction.predicate_name.replace("_", " ")
+        if self.profile and abstraction.predicate_name in self.profile.predicate_descriptions:
+            pred_desc = self.profile.predicate_descriptions[abstraction.predicate_name]
+            # Fill with variable names if no bindings
+            if "{0}" in pred_desc:
+                # Use parameter names from abstraction
+                params = list(abstraction.parameters.keys()) or ["?x", "?y", "?z"]
+                if parameter_bindings:
+                    params = [self._get_readable_value(parameter_bindings.get(p, p)) for p in params]
+                try:
+                    pred_desc = pred_desc.format(*params)
+                except (IndexError, KeyError):
+                    pass
+        
+        explanation = f"If it were not the case that {pred_desc} became false at the specified time, then we could:"
         
         if new_plan:
             explanation += "\n\n" + self._verbalize_plan(new_plan)
