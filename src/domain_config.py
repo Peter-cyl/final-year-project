@@ -211,16 +211,16 @@ class DomainConfigManager:
                 "energy": "{0} has energy level {1}"
             },
             action_descriptions={
-                "navigate": "Rover {0} navigates from {1} to {2}",
-                "recharge": "Rover {0} recharges at {1}",
-                "sample_soil": "Rover {0} samples soil at {2} using store {1}",
-                "sample_rock": "Rover {0} samples rock at {2} using store {1}",
-                "drop": "Rover {0} empties store {1}",
-                "calibrate": "Rover {0} calibrates camera {1} at {2} using target {3}",
-                "take_image": "Rover {0} takes image of {2} in mode {3} at {4}",
-                "communicate_soil_data": "Rover {0} communicates soil data from {2} to lander {1}",
-                "communicate_rock_data": "Rover {0} communicates rock data from {2} to lander {1}",
-                "communicate_image_data": "Rover {0} communicates image of {2} to lander {1}"
+                "navigate": "{0} navigates from {1} to {2}",
+                "recharge": "{0} recharges at {1}",
+                "sample_soil": "{0} samples soil at {2} using store {1}",
+                "sample_rock": "{0} samples rock at {2} using store {1}",
+                "drop": "{0} empties store {1}",
+                "calibrate": "{0} calibrates camera {1} at {2} using target {3}",
+                "take_image": "{0} takes image of {2} in mode {3} at {4}",
+                "communicate_soil_data": "{0} communicates soil data from {2} to lander {1}",
+                "communicate_rock_data": "{0} communicates rock data from {2} to lander {1}",
+                "communicate_image_data": "{0} communicates image of {2} to lander {1}"
             },
             action_infinitives={
                 "navigate": "navigate {0} from {1} to {2}",

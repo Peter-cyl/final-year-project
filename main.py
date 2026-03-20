@@ -24,6 +24,7 @@ from src.domain_config import DomainConfigManager
 from src.domain_summary import DomainSummaryGenerator
 from src.xaip_integration import XAIPIntegration, IntegrationConfig
 from src.predicate_processor import PredicateCatalog
+from src.plan_differ import PlanDiffer, compare_plan_files
 
 
 def demo_refrigeration_domain():
@@ -357,6 +358,25 @@ def cmd_problem(args):
     print(nlg.verbalize_problem_summary(problem))
 
 
+def cmd_diff(args):
+    """Compare two plan files and highlight differences."""
+    parser = PDDLParser()
+    parser.parse_file(args.domain)
+
+    nlg = NLGGenerator(parser)
+    differ = PlanDiffer(nlg)
+
+    plan_a = differ.parse_plan_file(args.plan1)
+    plan_b = differ.parse_plan_file(args.plan2)
+
+    diff = differ.compare_plans(plan_a, plan_b)
+
+    if args.concise:
+        print(differ.verbalize_diff_concise(diff))
+    else:
+        print(differ.verbalize_diff(diff))
+
+
 def main():
     """Main entry point."""
     arg_parser = argparse.ArgumentParser(
@@ -369,12 +389,14 @@ Commands:
   framework Process XAIPFramework format input
   watch     Watch mode for framework integration
   problem   Verbalize a problem file
+  diff      Compare two plans and highlight differences
 
 Examples:
   python main.py --demo
   python main.py summary -d domains/refrigerated_delivery_domain.pddl
   python main.py framework -d domain.pddl -i "predicate-refrigeratedttruck"
   python main.py problem -d domain.pddl -p problem.pddl
+  python main.py diff -d domain.pddl --plan1 planA.pddl --plan2 planB.pddl
         """
     )
 
@@ -401,6 +423,13 @@ Examples:
     problem_parser.add_argument("--domain", "-d", required=True, help="Path to PDDL domain file")
     problem_parser.add_argument("--problem", "-p", required=True, help="Path to PDDL problem file")
 
+    # Diff command
+    diff_parser = subparsers.add_parser("diff", help="Compare two plans")
+    diff_parser.add_argument("--domain", "-d", required=True, help="Path to PDDL domain file")
+    diff_parser.add_argument("--plan1", required=True, help="Path to original plan file")
+    diff_parser.add_argument("--plan2", required=True, help="Path to alternative plan file")
+    diff_parser.add_argument("--concise", "-c", action="store_true", help="Short summary only")
+
     # Legacy arguments for backward compatibility
     arg_parser.add_argument("--domain", "-d", help="Path to PDDL domain file")
     arg_parser.add_argument("--abstraction", "-a", help="Abstraction specification string")
@@ -421,6 +450,9 @@ Examples:
         return
     elif args.command == "problem":
         cmd_problem(args)
+        return
+    elif args.command == "diff":
+        cmd_diff(args)
         return
 
     # Legacy behavior
