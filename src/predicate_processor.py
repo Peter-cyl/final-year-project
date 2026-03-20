@@ -160,7 +160,9 @@ class PredicateCatalog:
         param_refs = [f"{{{i}}}" for i in range(len(params))]
 
         if name in ("at", "in"):
-            return f"{param_refs[0]} is {readable_name} {param_refs[1]}"
+            if len(param_refs) >= 2:
+                return f"{param_refs[0]} is {readable_name} {param_refs[1]}"
+            return f"{param_refs[0]} is {readable_name}"
         elif name.startswith("can_") or name.startswith("can-"):
             action = readable_name.replace("can ", "")
             return f"{param_refs[0]} can {action}"
