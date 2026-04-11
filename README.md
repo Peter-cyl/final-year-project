@@ -1,244 +1,130 @@
-# PlanVerb NLG - Natural Language Explanations for AI Planning
+# PlanVerb
 
-This project generates human-readable explanations from AI planning abstractions.
+Natural language generation for explainable AI planning. Takes the technical
+output of a contrastive explanation system and turns it into plain English.
 
-## 🎯 Project Goal
+Final Year Project, BSc Artificial Intelligence, King's College London.
+Author: Yat Long Chang (k23062413). Supervisor: Dr Amanda Coles.
 
-Transform technical planning output like:
-```
-abstract predicate (refrigerated ?t - truck) from action extend_meat_life
-```
+## What it does
 
-Into natural language:
-```
-If we did not require that truck T1 is refrigerated in order to extend 
-the life of the meat that is in the truck, then we could:
+Input (from the XAIPFramework):
 
-0.00: Driver D1 boards truck T1 at Depot (takes 0.01 minutes)
-0.01: Driver D1 drives truck T1 from Depot to Grocer (takes 10.0 minutes)
-...
-```
+    predicate-refrigeratedttruck
 
----
+Output:
 
-## 📁 Project Structure
+    "If we did not require that Truck 1 is refrigerated
+     in order to keep the meat fresh in Truck 1, then we could:"
 
-```
-planverb_project/
-├── main.py                 # Main entry point & demo
-├── requirements.txt        # Python dependencies
-├── domains/               
-│   └── refrigerated_delivery_domain.pddl   # Annotated example domain
-├── src/
-│   ├── __init__.py
-│   ├── pddl_parser.py      # PDDL parser with comment extraction
-│   └── nlg_generator.py    # Natural language generator
-├── tests/                  # Your test files go here
-└── output/                 # Generated outputs go here
-```
+It also compares two plans and summarises the differences:
 
----
+    "The alternative plan is 10.0 time units shorter.
+     Uses Truck 2 instead of Truck 1 (in 7 actions).
+     Adds extend_meat_life."
 
-## 🚀 Getting Started
+## Setup
 
-### 1. Install Dependencies
+Python 3.9 or later. One optional dependency:
 
-```bash
-pip install -r requirements.txt
-```
+    pip install unified-planning
 
-### 2. Run the Demo
+If your system complains about managed packages:
 
-```bash
-python main.py --demo
-```
+    pip install unified-planning --break-system-packages
 
-### 3. Use with Your Own Domain
+Everything else is standard library.
 
-```bash
-python main.py \
-    --domain domains/your_domain.pddl \
-    --abstraction "abstract predicate (your_pred ?x - type) from action your_action"
-```
+## Quick start
 
----
+Run the demo to check everything works:
 
-## 📝 How to Annotate PDDL Domains
+    python main.py --demo
 
-The key to good explanations is adding comments to your PDDL files.
+Try a single abstraction:
 
-### Action-Level Comments
+    python main.py -d domains/refrigerated_delivery_domain.pddl \
+        -a "abstract predicate (refrigerated ?t - truck) from action extend_meat_life"
 
-Add a comment line BEFORE each action:
+Get a domain summary:
 
-```lisp
-; Driver ?d drives the truck ?t from location ?l1 to location ?l2
-(:durative-action drive_truck
-  :parameters (?d - driver ?t - truck ?l1 ?l2 - location)
-  ...
-)
-```
+    python main.py summary -d domains/rover.pddl
 
-### Precondition Comments
+Compare two plans:
 
-Add inline comments after preconditions:
+    python main.py diff -d domains/settlers.pddl \
+        --plan1 "test_domains/Settlers/Original/example-plan.txt" \
+        --plan2 "test_domains/Settlers/Constrained/example-plan-constrained.txt" \
+        --concise
 
-```lisp
-:condition (and
+## Watch mode (XAIPFramework integration)
+
+    python main.py watch -d domains/refrigerated_delivery_domain.pddl \
+        --common-dir /path/to/shared/directory
+
+Polls the shared directory for request files from the C++ GUI and writes
+natural language responses back. Ctrl+C to stop.
+
+## File layout
+
+    main.py                     CLI entry point (demo, summary, diff, watch)
+    src/
+        pddl_parser.py          PDDL parsing with comment extraction
+        aiplan4eu_parser.py     AIPlan4EU integration (optional)
+        predicate_processor.py  predicate cataloguing
+        nlg_generator.py        NLG engine (predicate/duration/TIL abstractions)
+        domain_config.py        domain profiles for 5 domains
+        plan_differ.py          plan comparison and diff verbalization
+        xaip_integration.py     XAIPFramework file-based communication
+        domain_summary.py       domain summary generator
+        prototype_verbalizer.py early prototype, kept for reference
+    domains/                    annotated PDDL domain files
+        refrigerated_delivery_domain.pddl
+        rover.pddl
+        satellite.pddl
+        settlers.pddl
+        crewplanning.pddl
+    test_domains/               plan files and abstraction test cases
+
+## Supported domains
+
+All five have annotated PDDL files and configuration profiles:
+
+- Refrigeration -- truck logistics with perishable goods
+- Rover -- Mars rover exploration
+- Satellite -- observation scheduling
+- Settlers -- colony building with carts and trains
+- CrewPlanning -- astronaut daily scheduling
+
+Adding a new domain means writing a profile in domain_config.py (or a JSON file)
+and adding comments to the PDDL domain file. See the Refrigeration domain for
+an example of how comments should be structured.
+
+## How PDDL annotations work
+
+Comments before actions describe what the action does:
+
+    ; Driver ?d drives the truck ?t from ?l1 to ?l2
+    (:durative-action drive_truck ...)
+
+Inline comments on preconditions describe the condition:
+
     (over all (boarded ?d ?t))    ; ?d has boarded ?t
-    (at start (at ?t ?l1))        ; ?t is at ?l1
-)
-```
 
-### Predicate Comments
+The system uses these comments to build natural language explanations.
+When a domain profile is available, it uses the profile's cleaner templates
+instead, avoiding the redundancy issues that come from naive substitution
+into comments (e.g. "Driver Driver 1 drives the truck Truck 1").
 
-Add inline comments in the predicates section:
+## Three abstraction types
 
-```lisp
-(:predicates
-    (at ?l1 - locatable ?l2 - location)  ; ?l1 is at location ?l2
-    (refrigerated ?t - truck)             ; ?t is refrigerated
-)
-```
+1. Predicate -- "If we did not require that X in order to Y..."
+2. Duration -- "If it took 0 minutes to Y..."
+3. Timed Initial Literal -- "If X did not become false at time T..."
 
----
+## Testing
 
-## 🔧 Key Components
-
-### 1. PDDLParser (`src/pddl_parser.py`)
-
-Parses PDDL domain files and extracts:
-- Domain name and types
-- Predicates with comments
-- Actions with parameters, preconditions, effects, and comments
-
-```python
-from src.pddl_parser import PDDLParser
-
-parser = PDDLParser()
-domain = parser.parse_file("domains/refrigerated_delivery_domain.pddl")
-
-# Access parsed data
-for action in domain.actions:
-    print(f"Action: {action.name}")
-    print(f"Comment: {action.comment}")
-```
-
-### 2. NLGGenerator (`src/nlg_generator.py`)
-
-Generates natural language from abstractions:
-
-```python
-from src.nlg_generator import NLGGenerator
-
-nlg = NLGGenerator(parser)
-
-# Parse abstraction specification
-abstraction = nlg.parse_abstraction(
-    "abstract predicate (refrigerated ?t - truck) from action extend_meat_life"
-)
-
-# Generate explanation
-explanation = nlg.generate_explanation(
-    abstraction,
-    parameter_bindings={"?t": "t1", "?m": "m"}
-)
-print(explanation)
-```
-
----
-
-## 📊 Abstraction Types Supported
-
-| Type | Format | Example |
-|------|--------|---------|
-| Predicate | `abstract predicate (PRED ?params) from action ACTION` | `abstract predicate (refrigerated ?t - truck) from action extend_meat_life` |
-| Duration | `abstract duration from action ACTION` | `abstract duration from action drive_truck` |
-| TIL | (Coming soon) | Timed Initial Literals |
-
----
-
-## 🎯 TODO / Extensions
-
-### Required Tasks
-- [ ] Add comments to more domains (Rovers, Settlers, etc.)
-- [ ] Handle all abstraction types from XAIPFramework
-- [ ] Improve parameter substitution for natural text
-- [ ] Parse plan files from XAIPFramework
-
-### Optional Extensions  
-- [ ] Plan visualization (highlight differences)
-- [ ] Explanation ranking (which is best?)
-- [ ] Integration with AIPlan4EU unified-planning library
-- [ ] Web interface for explanations
-
----
-
-## 🧪 Testing
-
-Run the demo to verify everything works:
-
-```bash
-python main.py --demo
-```
-
-Expected output should show:
-1. ✓ Domain parsed successfully
-2. ✓ All 5 actions found
-3. ✓ Natural language explanations generated
-
----
-
-## 📚 Key Concepts
-
-### What is an "Abstraction"?
-
-When a planning problem is unsolvable with a constraint (e.g., "use truck2"), 
-the system removes preconditions to find what's blocking it.
-
-**Example:** 
-- Original: `extend_meat_life` requires `(refrigerated ?t)` 
-- If truck1 isn't refrigerated, plan fails
-- Abstraction: Remove `(refrigerated ?t)` precondition
-- Result: Plan now works with truck1
-- **Explanation:** "If the truck didn't need to be refrigerated..."
-
-### What is "Verbalization"?
-
-Converting technical plan syntax into readable sentences:
-
-**Before:** `(drive_truck d1 t1 a b)`
-
-**After:** "Driver D1 drives truck T1 from Depot to Butcher"
-
----
-
-## 🔗 Integration with XAIPFramework
-
-The XAIPFramework generates abstraction specifications in its output.
-Your job is to:
-
-1. Parse those specifications
-2. Match them to annotated PDDL domains
-3. Generate natural language explanations
-
-The framework outputs are typically in the `common/` folder after running.
-
----
-
-## 📖 References
-
-1. PlanVerb paper (Canal et al., 2022) - Inspiration for verbalization
-2. Contrastive Explanations paper (Krarup et al., 2021) - Theory behind abstractions
-3. AIPlan4EU unified-planning - Alternative PDDL parsing library
-
----
-
-## ❓ Need Help?
-
-1. Check the demo output: `python main.py --demo`
-2. Look at the annotated domain file for comment format
-3. Add print statements in the parser to debug
-4. Check that comment format matches expected patterns
-
-Good luck with your project! 🚀
+    python main.py --demo                          # full pipeline test
+    python -m src.pddl_parser                      # parser only
+    python -m src.nlg_generator                     # NLG only
+    python -m src.plan_differ                       # plan diff only
